@@ -1,0 +1,10 @@
+# Secrets / local config
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Misc
+.DS_Store
