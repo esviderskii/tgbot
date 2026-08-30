@@ -42,6 +42,9 @@ class DB:
             await conn.execute(
                 "ALTER TABLE notes ADD COLUMN IF NOT EXISTS repeat_tod SMALLINT"
             )
+            await conn.execute(
+                "ALTER TABLE notes ADD COLUMN IF NOT EXISTS tags TEXT[] DEFAULT '{}'"
+            )
 
     async def add_note(
         self,
@@ -49,30 +52,47 @@ class DB:
         remind_at,
         repeat_interval_minutes: int | None = None,
         repeat_tod: int | None = None,
+        tags: list[str] | None = None,
     ) -> int:
         assert self.pool
+        tags = tags or []
         async with self.pool.acquire() as conn:
             return await conn.fetchval(
-                "INSERT INTO notes (text, remind_at, repeat_interval_minutes, repeat_tod) "
-                "VALUES ($1, $2, $3, $4) RETURNING id",
-                text, remind_at, repeat_interval_minutes, repeat_tod,
+                "INSERT INTO notes "
+                "(text, remind_at, repeat_interval_minutes, repeat_tod, tags) "
+                "VALUES ($1, $2, $3, $4, $5) RETURNING id",
+                text, remind_at, repeat_interval_minutes, repeat_tod, tags,
             )
 
     async def list_notes(self, limit: int = 50) -> list[asyncpg.Record]:
         assert self.pool
         async with self.pool.acquire() as conn:
             rows = await conn.fetch(
-                "SELECT id, text, remind_at, reminder_sent "
+                "SELECT id, text, remind_at, reminder_sent, "
+                "repeat_interval_minutes, repeat_tod, tags "
                 "FROM notes ORDER BY id DESC LIMIT $1",
                 limit,
             )
             return rows
 
+    async def list_by_tag(
+        self, tag: str, limit: int = 50
+    ) -> list[asyncpg.Record]:
+        assert self.pool
+        async with self.pool.acquire() as conn:
+            return await conn.fetch(
+                "SELECT id, text, remind_at, reminder_sent, "
+                "repeat_interval_minutes, repeat_tod, tags "
+                "FROM notes WHERE $1 = ANY(tags) ORDER BY id DESC LIMIT $2",
+                tag.lower(), limit,
+            )
+
     async def get_note(self, note_id: int) -> asyncpg.Record | None:
         assert self.pool
         async with self.pool.acquire() as conn:
             return await conn.fetchrow(
-                "SELECT id, text, remind_at, reminder_sent FROM notes WHERE id = $1",
+                "SELECT id, text, remind_at, reminder_sent, "
+                "repeat_interval_minutes, repeat_tod, tags FROM notes WHERE id = $1",
                 note_id,
             )
 
@@ -109,6 +129,24 @@ class DB:
             await conn.execute(
                 "UPDATE notes SET remind_at = $2, reminder_sent = FALSE WHERE id = $1",
                 note_id, remind_at,
+            )
+
+    async def add_tag(self, note_id: int, tag: str) -> None:
+        assert self.pool
+        tag = tag.lower()
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE notes SET tags = array_append(tags, $2) "
+                "WHERE id = $1 AND NOT ($2 = ANY(tags))",
+                note_id, tag,
+            )
+
+    async def remove_tag(self, note_id: int, tag: str) -> None:
+        assert self.pool
+        async with self.pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE notes SET tags = array_remove(tags, $2) WHERE id = $1",
+                note_id, tag.lower(),
             )
 
 

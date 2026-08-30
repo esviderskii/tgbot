@@ -12,6 +12,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 
 from . import config
 from .db import db
+from .tags import extract_tags
 from .timeparser import parse_reminder
 
 log = logging.getLogger(__name__)
@@ -74,6 +75,7 @@ async def on_start(message: Message) -> None:
         "/add <текст> — создать заметку (можно добавить напоминание: "
         "«купить хлеб завтра в 9:00», «позвонить через 30 минут»)\n"
         "Повтор: «каждый день в 9:00», «каждые 3 дня»\n"
+        "Теги: /add купить хлеб #продукты, /list --tag продукты, /untag <id> <тег>\n"
         "/list — показать все заметки\n"
         "/delete — удалить заметку"
     )
@@ -92,15 +94,15 @@ async def on_add(message: Message) -> None:
         if remind.repeat_tod is not None
         else None
     )
+    body = remind.text if remind.text else args
+    body, tags = extract_tags(body)
     note_id = await db.add_note(
-        remind.text if remind.text else args,
-        remind.remind_at,
-        remind.interval_minutes,
-        repeat_tod_min,
+        body, remind.remind_at, remind.interval_minutes, repeat_tod_min, tags
     )
 
-    body = remind.text if remind.text else args
     reply = f"✅ Заметка добавлена (#{note_id}):\n{html.quote(body)}"
+    if tags:
+        reply += f"\n\n🏷 {' '.join('#' + t for t in tags)}"
     if remind.is_recurring:
         repeat = _fmt_repeat(remind.interval_minutes, remind.repeat_tod)
         reply += f"\n\n🔁 Повтор: {repeat} (первый: {_fmt_dt(remind.remind_at)})"
@@ -109,11 +111,26 @@ async def on_add(message: Message) -> None:
     await message.answer(reply)
 
 
+def _tag_mark(n: dict) -> str:
+    ts = n.get("tags") or []
+    return (" 🏷 " + " ".join("#" + t for t in ts)) if ts else ""
+
+
 @router.message(Command("list"))
 async def on_list(message: Message) -> None:
-    notes = await db.list_notes()
+    rest = message.text.split(maxsplit=1)[1].strip() if message.text and " " in message.text else ""
+    tag = None
+    if rest.startswith("--tag"):
+        parts = rest.split(maxsplit=2)
+        tag = parts[1].strip() if len(parts) > 1 else ""
+
+    notes = await db.list_by_tag(tag) if tag else await db.list_notes()
     if not notes:
-        await message.answer("Заметок пока нет. Добавь первую через /add.")
+        if tag:
+            msg = f"С заметкой #{tag} ничего нет."
+        else:
+            msg = "Заметок пока нет. Добавь первую через /add."
+        await message.answer(msg)
         return
 
     lines = []
@@ -130,9 +147,37 @@ async def on_list(message: Message) -> None:
             else:
                 marker = "✓⏰" if n["reminder_sent"] else "⏰"
                 line += f"  [{marker} {_fmt_dt(n['remind_at'])}]"
+        line += _tag_mark(n)
         lines.append(line)
 
-    await message.answer("📋 Заметки:\n" + "\n".join(lines))
+    title = f"📋 Заметки [🏷 {tag}]:\n" if tag else "📋 Заметки:\n"
+    await message.answer(title + "\n".join(lines))
+
+
+@router.message(Command("untag"))
+async def on_untag(message: Message) -> None:
+    parts = message.text.split()
+    if len(parts) < 3:
+        await message.answer("Использование: /untag <id> <тег>")
+        return
+    try:
+        note_id = int(parts[1])
+    except ValueError:
+        await message.answer("id должен быть числом.")
+        return
+    tag = parts[2].lstrip("#")
+    note = await db.get_note(note_id)
+    if note is None:
+        await message.answer(f"Заметки #{note_id} нет.")
+        return
+    await db.remove_tag(note_id, tag)
+    note = await db.get_note(note_id)
+    left = note["tags"] or []
+    if left:
+        kept = " ".join("#" + t for t in left)
+        await message.answer(f"🏷 Снят тег #{tag} с #{note_id}. Осталось: {kept}")
+    else:
+        await message.answer(f"🏷 Снят тег #{tag} с #{note_id}. Тегов не осталось.")
 
 
 @router.message(Command("delete", "del"))

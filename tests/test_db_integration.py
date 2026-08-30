@@ -83,6 +83,36 @@ class DbIntegrationTest(unittest.TestCase):
 
         asyncio.run(go())
 
+    def test_tags_roundtrip(self):
+        async def go():
+            db = DB(DB_URL)
+            await db.connect()
+            try:
+                nid = await db.add_note(
+                    "купить хлеб", None, tags=["продукты", "сегодня"]
+                )
+                got = await db.get_note(nid)
+                self.assertEqual(sorted(got["tags"]), ["продукты", "сегодня"])
+
+                by_tag = await db.list_by_tag("ПРОДУКТЫ")
+                self.assertTrue(any(r["id"] == nid for r in by_tag))
+
+                await db.add_tag(nid, "продукты")
+                await db.add_tag(nid, "важное")
+                got = await db.get_note(nid)
+                self.assertEqual(sorted(got["tags"]), ["важное", "продукты", "сегодня"])
+
+                await db.remove_tag(nid, "сегодня")
+                got = await db.get_note(nid)
+                self.assertNotIn("сегодня", got["tags"])
+
+                self.assertEqual(got["remind_at"], None)
+                await db.delete_note(nid)
+            finally:
+                await db.close()
+
+        asyncio.run(go())
+
     def test_missing_db_returns_no_due(self):
         """With no notes at all, get_due is empty and nothing explodes."""
         async def go():
