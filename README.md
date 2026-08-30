@@ -35,6 +35,20 @@
    docker compose down
    ```
 
+## Разработка и CI
+
+GitHub Actions (`.github/workflows/ci.yml`) гоняет на каждый пуш/PR:
+
+```bash
+ruff check .                                    # линтер
+python -m unittest tests.test_recurrence        # юнит-тесты
+# интеграционные тесты с PostgreSQL (CI)
+TEST_DATABASE_URL=postgresql://notes:notes@localhost:5432/notes \
+  python -m unittest tests.test_db_integration
+```
+
+Интеграционный тест скипается, если `TEST_DATABASE_URL`/`DATABASE_URL` не задан.
+
 ## Структура
 
 ```

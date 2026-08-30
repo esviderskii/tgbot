@@ -99,9 +99,11 @@ async def on_add(message: Message) -> None:
         repeat_tod_min,
     )
 
-    reply = f"✅ Заметка добавлена (#{note_id}):\n{html.quote(remind.text if remind.text else args)}"
+    body = remind.text if remind.text else args
+    reply = f"✅ Заметка добавлена (#{note_id}):\n{html.quote(body)}"
     if remind.is_recurring:
-        reply += f"\n\n🔁 Повтор: {_fmt_repeat(remind.interval_minutes, remind.repeat_tod)} (первый: {_fmt_dt(remind.remind_at)})"
+        repeat = _fmt_repeat(remind.interval_minutes, remind.repeat_tod)
+        reply += f"\n\n🔁 Повтор: {repeat} (первый: {_fmt_dt(remind.remind_at)})"
     elif remind.remind_at:
         reply += f"\n\n⏰ Напомню: {_fmt_dt(remind.remind_at)}"
     await message.answer(reply)
@@ -148,7 +150,8 @@ async def on_delete(message: Message) -> None:
         for i, n in enumerate(notes, start=1)
     ]
     buttons.append([InlineKeyboardButton(text="Отмена", callback_data="delno")])
-    await message.answer("Выбери заметку для удаления:", reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons))
+    kb = InlineKeyboardMarkup(inline_keyboard=buttons)
+    await message.answer("Выбери заметку для удаления:", reply_markup=kb)
 
 
 @router.callback_query(F.data.startswith("del:"))

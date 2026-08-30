@@ -55,7 +55,7 @@ _UNIT = "|".join(sorted(_UNIT_MIN.keys(), key=len, reverse=True))
 _RECUR_DAY_TIME = re.compile(rf"каждый\s+день\s+(?:в\s*)?{_TIME}", re.I)
 _RECUR_WEEK_TIME = re.compile(rf"кажд\w*\s+недел\w*\s+(?:в\s*)?{_TIME}", re.I)
 _RECUR_EVERY_N = re.compile(
-    rf"кажд\w*\s+(?P<num>\d*)\s*(?P<unit>недел\w*|дн\w*|час\w*|минут\w*)", re.I
+    r"кажд\w*\s+(?P<num>\d*)\s*(?P<unit>недел\w*|дн\w*|час\w*|минут\w*)", re.I
 )
 
 # One-shot phrases
